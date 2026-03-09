@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>一键修改 Icon - 飞书小工具</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --primary: #3370ff;
+      --primary-hover: #4d84ff;
+      --border: #e5e6eb;
+      --text: #1f2329;
+      --text-secondary: #8f959e;
+      --radius: 8px;
+      --shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .container { max-width: 560px; margin: 0 auto; }
+    h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px 0; }
+    .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 32px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: #fafbfc;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary);
+      background: rgba(51, 112, 255, .04);
+    }
+    .upload-zone input { display: none; }
+    .upload-zone .hint { color: var(--text-secondary); font-size: 14px; }
+    .preview-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 16px 0;
+      flex-wrap: wrap;
+    }
+    .preview-wrap img {
+      max-width: 160px;
+      max-height: 160px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      cursor: crosshair;
+    }
+    .preview-wrap .info { font-size: 13px; color: var(--text-secondary); }
+    .platforms { display: flex; flex-direction: column; gap: 8px; }
+    .platforms label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+    .platforms input[type="checkbox"] { width: 18px; height: 18px; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-secondary { background: #f2f3f5; color: var(--text); margin-left: 8px; }
+    .btn-secondary:hover { background: #e5e6eb; }
+    .actions { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; }
+    .status { font-size: 13px; color: var(--text-secondary); margin-top: 12px; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>一键修改 Icon</h1>
+    <p class="sub">上传一张图，选择目标平台，一键生成安卓 / 谷歌 / 小游戏所需全部图标，并打包下载。</p>
+
+    <div class="card">
+      <div id="uploadZone" class="upload-zone">
+        <input type="file" id="fileInput" accept="image/*">
+        <div class="hint">点击或拖拽图片到此处</div>
+      </div>
+    </div>
+
+    <div id="workArea" class="card hidden">
+      <div class="preview-row">
+        <div class="preview-wrap">
+          <img id="previewImg" alt="预览" title="点击可选取背景色（用于安卓/谷歌）">
+          <div>
+            <div class="info" id="imgInfo"></div>
+            <div class="info" id="colorHint"></div>
+          </div>
+        </div>
+      </div>
+      <div class="platforms">
+        <label><input type="checkbox" id="chkAndroid" checked> 安卓</label>
+        <label><input type="checkbox" id="chkGoogle"> 谷歌</label>
+        <label><input type="checkbox" id="chkMinigame" checked> 小游戏</label>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn btn-primary" id="btnGenerate" disabled>生成并下载 ZIP</button>
+        <button type="button" class="btn btn-secondary" id="btnReset">重新选择</button>
+      </div>
+      <div class="status" id="status"></div>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  const fileInput = document.getElementById('fileInput');
+  const uploadZone = document.getElementById('uploadZone');
+  const workArea = document.getElementById('workArea');
+  const previewImg = document.getElementById('previewImg');
+  const imgInfo = document.getElementById('imgInfo');
+  const colorHint = document.getElementById('colorHint');
+  const chkAndroid = document.getElementById('chkAndroid');
+  const chkGoogle = document.getElementById('chkGoogle');
+  const chkMinigame = document.getElementById('chkMinigame');
+  const btnGenerate = document.getElementById('btnGenerate');
+  const btnReset = document.getElementById('btnReset');
+  const statusEl = document.getElementById('status');
+
+  let sourceImage = null;
+  let selectedColor = null;
+
+  uploadZone.addEventListener('click', () => fileInput.click());
+  uploadZone.addEventListener('dragover', (e) => { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('dragover'));
+  uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) handleFile(file);
+  });
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files[0];
+    if (file) handleFile(file);
+  });
+
+  previewImg.addEventListener('click', (e) => {
+    if (!sourceImage) return;
+    const rect = previewImg.getBoundingClientRect();
+    const x = Math.floor((e.clientX - rect.left) * (sourceImage.width / rect.width));
+    const y = Math.floor((e.clientY - rect.top) * (sourceImage.height / rect.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = sourceImage.width;
+    canvas.height = sourceImage.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(sourceImage, 0, 0);
+    const px = ctx.getImageData(x, y, 1, 1).data;
+    selectedColor = [px[0], px[1], px[2]];
+    colorHint.textContent = '已选背景色: RGB(' + selectedColor.join(',') + ')';
+  });
+
+  btnGenerate.addEventListener('click', generateAndDownload);
+  btnReset.addEventListener('click', reset);
+
+  function handleFile(file) {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      sourceImage = img;
+      previewImg.src = url;
+      imgInfo.textContent = '尺寸: ' + img.width + ' × ' + img.height;
+      colorHint.textContent = '点击左侧图片可选取背景色（安卓/谷歌）';
+      workArea.classList.remove('hidden');
+      btnGenerate.disabled = false;
+    };
+    img.src = url;
+  }
+
+  function reset() {
+    sourceImage = null;
+    selectedColor = null;
+    fileInput.value = '';
+    workArea.classList.add('hidden');
+    btnGenerate.disabled = true;
+  }
+
+  function setStatus(txt) { statusEl.textContent = txt; }
+
+  function getDominantEdgeColor(img) {
+    if (selectedColor) return selectedColor;
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const w = img.width, h = img.height;
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const count = {};
+    const sample = (x, y) => {
+      const i = (y * w + x) * 4;
+      const key = data[i] + ',' + data[i+1] + ',' + data[i+2];
+      count[key] = (count[key] || 0) + 1;
+    };
+    for (let y = 0; y < Math.floor(0.2 * h); y++)
+      for (let x = 0; x < w; x++) sample(x, y);
+    for (let y = 0; y < h; y++)
+      for (let x = 0; x < Math.floor(0.2 * w); x++) sample(x, y);
+    const key = Object.keys(count).reduce((a, b) => count[a] >= count[b] ? a : b);
+    return key.split(',').map(Number);
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    if (r <= 0) { ctx.rect(x, y, w, h); return; }
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arc(x + w - r, y + r, r, -Math.PI/2, 0);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arc(x + w - r, y + h - r, r, 0, Math.PI/2);
+    ctx.lineTo(x + r, y + h);
+    ctx.arc(x + r, y + h - r, r, Math.PI/2, Math.PI);
+    ctx.lineTo(x, y + r);
+    ctx.arc(x + r, y + r, r, Math.PI, Math.PI*1.5);
+    ctx.closePath();
+  }
+
+  function drawRounded(img, size, radius) {
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    roundRectPath(ctx, 0, 0, size, size, radius);
+    ctx.clip();
+    const scale = Math.max(size / img.width, size / img.height);
+    const sw = img.width * scale, sh = img.height * scale;
+    ctx.drawImage(img, (size - sw) / 2, (size - sh) / 2, sw, sh);
+    return c;
+  }
+
+  function drawPadded(canvas, padding) {
+    if (padding <= 0) return canvas;
+    const w = canvas.width + 2 * padding, h = canvas.height + 2 * padding;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(canvas, padding, padding);
+    return c;
+  }
+
+  function resizeToCanvas(img, w, h) {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    return c;
+  }
+
+  function canvasToBlob(canvas, mime) {
+    return new Promise(function (resolve) {
+      canvas.toBlob(function (blob) { resolve(blob); }, mime || 'image/png');
+    });
+  }
+
+  async function runAndroid(img, zip, folder) {
+    const bg = getDominantEdgeColor(img);
+    const sizes = [[16,16],[114,114],[216,216],[256,256],[512,512]];
+    for (const [w, h] of sizes) {
+      const c = resizeToCanvas(img, w, h);
+      zip.file(folder + '/' + w + '_' + h + '.png', await canvasToBlob(c));
+    }
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = 324; bgCanvas.height = 324;
+    const bctx = bgCanvas.getContext('2d');
+    bctx.fillStyle = 'rgb(' + bg[0] + ',' + bg[1] + ',' + bg[2] + ')';
+    bctx.fillRect(0, 0, 324, 324);
+    zip.file(folder + '/app_icon_background.png', await canvasToBlob(bgCanvas));
+    let c = drawRounded(img, 120, 12);
+    c = drawPadded(c, 12);
+    zip.file(folder + '/app_icon.png', await canvasToBlob(c));
+    c = resizeToCanvas(img, 214, 214);
+    c = drawPadded(c, 55);
+    zip.file(folder + '/app_icon_foreground.png', await canvasToBlob(c));
+    c = drawRounded(img, 132, 66);
+    c = drawPadded(c, 6);
+    zip.file(folder + '/app_icon_round.png', await canvasToBlob(c));
+  }
+
+  async function runGoogle(img, zip, folder) {
+    const bg = getDominantEdgeColor(img);
+    zip.file(folder + '/512_512.png', await canvasToBlob(resizeToCanvas(img, 512, 512)));
+    const bgCanvas = document.createElement('canvas');
+    bgCanvas.width = 324; bgCanvas.height = 324;
+    const bctx = bgCanvas.getContext('2d');
+    bctx.fillStyle = 'rgb(' + bg[0] + ',' + bg[1] + ',' + bg[2] + ')';
+    bctx.fillRect(0, 0, 324, 324);
+    zip.file(folder + '/app_icon_background.png', await canvasToBlob(bgCanvas));
+    let c = drawRounded(img, 120, 12);
+    c = drawPadded(c, 12);
+    zip.file(folder + '/app_icon.png', await canvasToBlob(c));
+    c = resizeToCanvas(img, 214, 214);
+    c = drawPadded(c, 55);
+    zip.file(folder + '/app_icon_foreground.png', await canvasToBlob(c));
+    c = drawRounded(img, 132, 66);
+    c = drawPadded(c, 6);
+    zip.file(folder + '/app_icon_round.png', await canvasToBlob(c));
+  }
+
+  async function runMinigame(img, zip, folder) {
+    const sizes = [[144,144],[148,148],[216,216],[220,220],[256,256],[512,512],[600,600]];
+    for (const [w, h] of sizes) {
+      const c = resizeToCanvas(img, w, h);
+      zip.file(folder + '/' + w + '_' + h + '.png', await canvasToBlob(c));
+    }
+    let c = drawRounded(img, 96, 16);
+    zip.file(folder + '/96_96.png', await canvasToBlob(c));
+    c = drawRounded(img, 222, 111);
+    zip.file(folder + '/222_222.png', await canvasToBlob(c));
+  }
+
+  async function generateAndDownload() {
+    if (!sourceImage) return;
+    const android = chkAndroid.checked;
+    const google = chkGoogle.checked;
+    const minigame = chkMinigame.checked;
+    if (!android && !google && !minigame) {
+      statusEl.textContent = '请至少勾选一个平台';
+      return;
+    }
+    btnGenerate.disabled = true;
+    setStatus('正在生成...');
+    const zip = new JSZip();
+    try {
+      if (android) await runAndroid(sourceImage, zip, '安卓');
+      if (google) await runGoogle(sourceImage, zip, '谷歌');
+      if (minigame) await runMinigame(sourceImage, zip, '小游戏');
+      setStatus('正在打包 ZIP...');
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'icon_export.zip';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      setStatus('已下载 icon_export.zip');
+    } catch (err) {
+      setStatus('错误: ' + err.message);
+    }
+    btnGenerate.disabled = false;
+  }
+})();
+  </script>
+</body>
+</html>
