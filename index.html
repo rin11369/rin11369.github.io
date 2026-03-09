@@ -1,0 +1,780 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>图片与图标工具 - 飞书小工具</title>
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --bg: #f0f2f5;
+      --card: #fff;
+      --primary: #3370ff;
+      --primary-hover: #4d84ff;
+      --border: #e5e6eb;
+      --text: #1f2329;
+      --text-secondary: #8f959e;
+      --radius: 8px;
+      --shadow: 0 2px 12px rgba(0,0,0,.06);
+    }
+    body {
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      margin: 0;
+      padding: 16px;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    .container { max-width: 720px; margin: 0 auto; }
+    h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px 0; }
+    .sub { color: var(--text-secondary); font-size: 13px; margin-bottom: 20px; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+    .tab-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      cursor: pointer;
+      background: var(--card);
+      color: var(--text-secondary);
+      box-shadow: var(--shadow);
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { background: var(--primary); color: #fff; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .upload-zone {
+      border: 2px dashed var(--border);
+      border-radius: var(--radius);
+      padding: 24px 16px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color .2s, background .2s;
+      background: #fafbfc;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      border-color: var(--primary);
+      background: rgba(51, 112, 255, .04);
+    }
+    .upload-zone input { display: none; }
+    .upload-zone .hint { color: var(--text-secondary); font-size: 14px; }
+    .opts { display: grid; gap: 16px; margin: 16px 0; }
+    .opt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+    .opt-row label { font-size: 14px; min-width: 80px; }
+    .opt-row input[type="number"] { width: 72px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+    .opt-row input[type="checkbox"] { width: 18px; height: 18px; }
+    .opt-row input[type="radio"] { width: 16px; height: 16px; }
+    .preset-btn { padding: 6px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--card); font-size: 13px; cursor: pointer; color: var(--text); margin-right: 6px; }
+    .preset-btn:hover { border-color: var(--primary); color: var(--primary); }
+    .preset-label { font-size: 14px; margin-right: 6px; }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      font-family: inherit;
+    }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { opacity: .6; cursor: not-allowed; }
+    .btn-secondary { background: #f2f3f5; color: var(--text); margin-left: 8px; }
+    .btn-secondary:hover { background: #e5e6eb; }
+    .actions { margin-top: 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    .status { font-size: 13px; color: var(--text-secondary); margin-top: 12px; }
+    .preview-section { margin-top: 20px; }
+    .preview-section h3 { font-size: 15px; margin: 0 0 12px 0; }
+    .preview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
+    }
+    .preview-item {
+      background: #f7f8fa;
+      border-radius: var(--radius);
+      padding: 8px;
+      text-align: center;
+    }
+    .preview-item img { max-width: 100%; height: 100px; object-fit: contain; display: block; margin: 0 auto 6px; border-radius: 4px; }
+    .preview-item .name { font-size: 12px; color: var(--text-secondary); word-break: break-all; }
+    .hidden { display: none !important; }
+    /* Icon 面板 */
+    .preview-wrap {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin: 16px 0;
+      flex-wrap: wrap;
+    }
+    .preview-wrap img {
+      max-width: 160px;
+      max-height: 160px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      cursor: crosshair;
+    }
+    .preview-wrap .info { font-size: 13px; color: var(--text-secondary); }
+    .platforms { display: flex; flex-direction: column; gap: 8px; }
+    .platforms label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
+    .platforms input[type="checkbox"] { width: 18px; height: 18px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>图片与图标工具</h1>
+    <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后下载。</p>
+
+    <div class="tabs">
+      <button type="button" class="tab-btn active" data-tab="batch">批量改尺寸</button>
+      <button type="button" class="tab-btn" data-tab="icon">一键改 Icon</button>
+    </div>
+
+    <!-- 批量改尺寸 -->
+    <div id="panelBatch" class="panel active">
+      <div class="card">
+        <div id="uploadZone" class="upload-zone">
+          <input type="file" id="fileInput" accept="image/*" multiple>
+          <div class="hint">点击或拖拽多张图片到此处（可多选）</div>
+        </div>
+        <div id="selectedPreviewSection" class="preview-section hidden">
+          <h3>已选图片预览（共 <span id="selectedCount">0</span> 张）</h3>
+          <div class="preview-grid" id="selectedPreviewGrid"></div>
+        </div>
+        <div class="opts">
+          <div class="opt-row">
+            <span style="min-width:90px">尺寸方式：</span>
+            <label><input type="radio" name="batchMethod" value="custom" checked> 自定义尺寸</label>
+            <label><input type="radio" name="batchMethod" value="scale"> 成倍缩放</label>
+          </div>
+          <div id="batchCustomRow" class="opt-row">
+            <label>宽 <input type="number" id="inputW" min="1" max="4096" value="800" placeholder="宽"></label>
+            <label>高 <input type="number" id="inputH" min="1" max="4096" value="600" placeholder="高"></label>
+            <span class="preset-label">预设：</span>
+            <button type="button" class="preset-btn" data-w="16" data-h="16">16×16</button>
+            <button type="button" class="preset-btn" data-w="256" data-h="256">256×256</button>
+            <button type="button" class="preset-btn" data-w="512" data-h="512">512×512</button>
+          </div>
+          <div id="batchScaleRow" class="opt-row hidden">
+            <label>缩放比例 <input type="number" id="inputScale" min="0.01" max="10" step="0.1" value="1" placeholder="如 0.5、1、2"></label>
+            <span class="hint" style="font-size:12px;color:var(--text-secondary)">按比例缩放宽高，如 0.5 为一半</span>
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="btnGenerate" disabled>生成预览</button>
+          <button type="button" class="btn btn-secondary" id="btnDownload" disabled>下载 ZIP</button>
+        </div>
+        <div class="status" id="status"></div>
+      </div>
+      <div id="previewSection" class="card preview-section hidden">
+        <h3>生成结果预览（确认无误后点击「下载 ZIP」）</h3>
+        <div class="preview-grid" id="previewGrid"></div>
+      </div>
+    </div>
+
+    <!-- 一键改 Icon -->
+    <div id="panelIcon" class="panel">
+      <div class="card">
+        <div id="iconUploadZone" class="upload-zone">
+          <input type="file" id="iconFileInput" accept="image/*">
+          <div class="hint">点击或拖拽一张图片到此处</div>
+        </div>
+      </div>
+      <div id="iconWorkArea" class="card hidden">
+        <div class="preview-wrap">
+          <img id="iconPreviewImg" alt="预览" title="点击可选取背景色（用于安卓/谷歌）">
+          <div>
+            <div class="info" id="iconImgInfo"></div>
+            <div class="info" style="margin-bottom:4px">请点击图片中想要的颜色位置取色生成背景图片</div>
+            <div class="info" id="iconColorHint"></div>
+          </div>
+        </div>
+        <div class="platforms">
+          <label><input type="checkbox" id="chkAndroid"> 安卓</label>
+          <label><input type="checkbox" id="chkGoogle"> 谷歌</label>
+          <label><input type="checkbox" id="chkMinigame"> 小游戏</label>
+        </div>
+        <div class="opt-row" style="margin-top:12px">
+          <label for="tinypngKey" style="min-width:auto">TinyPNG API Key（可选）</label>
+          <input type="text" id="tinypngKey" placeholder="谷歌 512×512 超过 1MB 时优先用 TinyPNG 压缩" style="flex:1; max-width:280px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px">
+          <a href="https://tinypng.com/developers" target="_blank" rel="noopener" style="font-size:12px; color:var(--primary)">免费获取</a>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn btn-primary" id="iconBtnGenerate" disabled>生成预览</button>
+          <button type="button" class="btn btn-secondary" id="iconBtnDownload" disabled>下载 ZIP</button>
+          <button type="button" class="btn btn-secondary" id="iconBtnReset">重新选择</button>
+        </div>
+        <div class="status" id="iconStatus"></div>
+      </div>
+      <div id="iconPreviewSection" class="card preview-section hidden">
+        <h3>Icon 生成结果预览（确认无误后点击「下载 ZIP」）</h3>
+        <div class="preview-grid" id="iconPreviewGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+(function () {
+  // ---------- 标签页切换 ----------
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var tab = this.getAttribute('data-tab');
+      document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+      this.classList.add('active');
+      document.getElementById('panel' + (tab === 'batch' ? 'Batch' : 'Icon')).classList.add('active');
+    });
+  });
+
+  // ---------- 批量改尺寸 ----------
+  var fileInput = document.getElementById('fileInput');
+  var uploadZone = document.getElementById('uploadZone');
+  var inputW = document.getElementById('inputW');
+  var inputH = document.getElementById('inputH');
+  var inputScale = document.getElementById('inputScale');
+  var batchCustomRow = document.getElementById('batchCustomRow');
+  var batchScaleRow = document.getElementById('batchScaleRow');
+  var btnGenerate = document.getElementById('btnGenerate');
+  var btnDownload = document.getElementById('btnDownload');
+  var statusEl = document.getElementById('status');
+  var selectedPreviewSection = document.getElementById('selectedPreviewSection');
+  var selectedPreviewGrid = document.getElementById('selectedPreviewGrid');
+  var selectedCountEl = document.getElementById('selectedCount');
+  var previewSection = document.getElementById('previewSection');
+  var previewGrid = document.getElementById('previewGrid');
+
+  var selectedFiles = [];
+  var generatedBlobs = [];
+
+  document.querySelectorAll('input[name="batchMethod"]').forEach(function (radio) {
+    radio.addEventListener('change', function () {
+      var isCustom = document.querySelector('input[name="batchMethod"]:checked').value === 'custom';
+      batchCustomRow.classList.toggle('hidden', !isCustom);
+      batchScaleRow.classList.toggle('hidden', isCustom);
+    });
+  });
+  batchScaleRow.classList.add('hidden');
+
+  document.querySelectorAll('.preset-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      inputW.value = this.getAttribute('data-w');
+      inputH.value = this.getAttribute('data-h');
+    });
+  });
+
+  uploadZone.addEventListener('click', function () { fileInput.click(); });
+  uploadZone.addEventListener('dragover', function (e) { e.preventDefault(); uploadZone.classList.add('dragover'); });
+  uploadZone.addEventListener('dragleave', function () { uploadZone.classList.remove('dragover'); });
+  uploadZone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    uploadZone.classList.remove('dragover');
+    var files = Array.from(e.dataTransfer.files).filter(function (f) { return f.type.startsWith('image/'); });
+    if (files.length) setFiles(files);
+  });
+  fileInput.addEventListener('change', function () {
+    var files = Array.from(fileInput.files || []);
+    if (files.length) setFiles(files);
+  });
+
+  function setFiles(files) {
+    selectedFiles = files;
+    btnGenerate.disabled = false;
+    previewSection.classList.add('hidden');
+    btnDownload.disabled = true;
+    generatedBlobs = [];
+    selectedCountEl.textContent = files.length;
+    selectedPreviewSection.classList.remove('hidden');
+    selectedPreviewGrid.innerHTML = '';
+    files.forEach(function (file) {
+      var url = URL.createObjectURL(file);
+      var div = document.createElement('div');
+      div.className = 'preview-item';
+      var img = document.createElement('img');
+      img.src = url;
+      img.alt = file.name;
+      var nameEl = document.createElement('div');
+      nameEl.className = 'name';
+      nameEl.textContent = file.name;
+      div.appendChild(img);
+      div.appendChild(nameEl);
+      selectedPreviewGrid.appendChild(div);
+    });
+    statusEl.textContent = '已选 ' + files.length + ' 张图片，设置选项后点击「生成预览」';
+  }
+
+  function resizeImg(img, targetW, targetH) {
+    var c = document.createElement('canvas');
+    c.width = targetW;
+    c.height = targetH;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, targetW, targetH);
+    return c;
+  }
+
+  function canvasToBlob(canvas) {
+    return new Promise(function (resolve) {
+      canvas.toBlob(function (blob) { resolve(blob); }, 'image/png');
+    });
+  }
+
+  function processOne(file, method, w, h, scale) {
+    return new Promise(function (resolve, reject) {
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () {
+        (async function () {
+          try {
+            var canvas;
+            var targetW = img.width, targetH = img.height;
+            if (method === 'custom' && w > 0 && h > 0) {
+              targetW = w;
+              targetH = h;
+            } else if (method === 'scale' && scale > 0) {
+              targetW = Math.max(1, Math.round(img.width * scale));
+              targetH = Math.max(1, Math.round(img.height * scale));
+            }
+            canvas = resizeImg(img, targetW, targetH);
+            var blob = await canvasToBlob(canvas);
+            var baseName = (file.name || 'image').replace(/\.[^.]+$/, '');
+            var name = baseName + '_' + targetW + 'x' + targetH + '.png';
+            URL.revokeObjectURL(url);
+            resolve({ name: name, blob: blob, dataUrl: URL.createObjectURL(blob) });
+          } catch (e) {
+            URL.revokeObjectURL(url);
+            reject(e);
+          }
+        })();
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('加载失败')); };
+      img.src = url;
+    });
+  }
+
+  btnGenerate.addEventListener('click', async function () {
+    if (!selectedFiles.length) return;
+    var method = document.querySelector('input[name="batchMethod"]:checked').value;
+    var w = Math.max(1, parseInt(inputW.value, 10) || 800);
+    var h = Math.max(1, parseInt(inputH.value, 10) || 600);
+    var scale = parseFloat(inputScale.value) || 1;
+    if (method === 'scale' && scale <= 0) { statusEl.textContent = '请输入有效的缩放比例'; return; }
+    btnGenerate.disabled = true;
+    statusEl.textContent = '正在生成...';
+    previewGrid.innerHTML = '';
+    generatedBlobs = [];
+    try {
+      for (var i = 0; i < selectedFiles.length; i++) {
+        statusEl.textContent = '处理中 ' + (i + 1) + ' / ' + selectedFiles.length + '...';
+        var result = await processOne(selectedFiles[i], method, w, h, scale);
+        generatedBlobs.push(result);
+      }
+      previewSection.classList.remove('hidden');
+      generatedBlobs.forEach(function (item) {
+        var div = document.createElement('div');
+        div.className = 'preview-item';
+        var img = document.createElement('img');
+        img.src = item.dataUrl;
+        img.alt = item.name;
+        var nameEl = document.createElement('div');
+        nameEl.className = 'name';
+        nameEl.textContent = item.name;
+        div.appendChild(img);
+        div.appendChild(nameEl);
+        previewGrid.appendChild(div);
+      });
+      statusEl.textContent = '已生成 ' + generatedBlobs.length + ' 张，请预览后点击「下载 ZIP」';
+      btnDownload.disabled = false;
+    } catch (err) {
+      statusEl.textContent = '错误: ' + err.message;
+    }
+    btnGenerate.disabled = false;
+  });
+
+  btnDownload.addEventListener('click', async function () {
+    if (!generatedBlobs.length) return;
+    btnDownload.disabled = true;
+    statusEl.textContent = '正在打包 ZIP...';
+    try {
+      var zip = new JSZip();
+      generatedBlobs.forEach(function (item) {
+        zip.file(item.name, item.blob);
+      });
+      var blob = await zip.generateAsync({ type: 'blob' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'batch_images.zip';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      statusEl.textContent = '已下载 batch_images.zip';
+    } catch (err) {
+      statusEl.textContent = '错误: ' + err.message;
+    }
+    btnDownload.disabled = false;
+  });
+
+  // ---------- 一键改 Icon ----------
+  var iconFileInput = document.getElementById('iconFileInput');
+  var iconUploadZone = document.getElementById('iconUploadZone');
+  var iconWorkArea = document.getElementById('iconWorkArea');
+  var iconPreviewImg = document.getElementById('iconPreviewImg');
+  var iconImgInfo = document.getElementById('iconImgInfo');
+  var iconColorHint = document.getElementById('iconColorHint');
+  var chkAndroid = document.getElementById('chkAndroid');
+  var chkGoogle = document.getElementById('chkGoogle');
+  var chkMinigame = document.getElementById('chkMinigame');
+  var iconBtnGenerate = document.getElementById('iconBtnGenerate');
+  var iconBtnDownload = document.getElementById('iconBtnDownload');
+  var iconBtnReset = document.getElementById('iconBtnReset');
+  var iconStatus = document.getElementById('iconStatus');
+  var iconPreviewSection = document.getElementById('iconPreviewSection');
+  var iconPreviewGrid = document.getElementById('iconPreviewGrid');
+
+  var iconSourceImage = null;
+  var iconSelectedColor = null;
+  var iconGeneratedList = [];
+
+  iconUploadZone.addEventListener('click', function () { iconFileInput.click(); });
+  iconUploadZone.addEventListener('dragover', function (e) { e.preventDefault(); iconUploadZone.classList.add('dragover'); });
+  iconUploadZone.addEventListener('dragleave', function () { iconUploadZone.classList.remove('dragover'); });
+  iconUploadZone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    iconUploadZone.classList.remove('dragover');
+    var file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) iconHandleFile(file);
+  });
+  iconFileInput.addEventListener('change', function () {
+    var file = iconFileInput.files[0];
+    if (file) iconHandleFile(file);
+  });
+
+  iconPreviewImg.addEventListener('click', function (e) {
+    if (!iconSourceImage) return;
+    var rect = iconPreviewImg.getBoundingClientRect();
+    var x = Math.floor((e.clientX - rect.left) * (iconSourceImage.width / rect.width));
+    var y = Math.floor((e.clientY - rect.top) * (iconSourceImage.height / rect.height));
+    var canvas = document.createElement('canvas');
+    canvas.width = iconSourceImage.width;
+    canvas.height = iconSourceImage.height;
+    var ctx = canvas.getContext('2d');
+    ctx.drawImage(iconSourceImage, 0, 0);
+    var px = ctx.getImageData(x, y, 1, 1).data;
+    iconSelectedColor = [px[0], px[1], px[2]];
+    iconColorHint.textContent = '已选背景色: RGB(' + iconSelectedColor.join(',') + ')';
+  });
+
+  iconBtnReset.addEventListener('click', iconReset);
+
+  function iconHandleFile(file) {
+    var url = URL.createObjectURL(file);
+    var img = new Image();
+    img.onload = function () {
+      iconSourceImage = img;
+      iconPreviewImg.src = url;
+      iconImgInfo.textContent = '尺寸: ' + img.width + ' × ' + img.height;
+      iconColorHint.textContent = '点击左侧图片可选取背景色（安卓/谷歌）';
+      iconWorkArea.classList.remove('hidden');
+      iconBtnGenerate.disabled = false;
+    };
+    img.src = url;
+  }
+
+  function iconReset() {
+    iconSourceImage = null;
+    iconSelectedColor = null;
+    iconFileInput.value = '';
+    iconGeneratedList = [];
+    iconWorkArea.classList.add('hidden');
+    iconPreviewSection.classList.add('hidden');
+    iconBtnGenerate.disabled = true;
+    iconBtnDownload.disabled = true;
+  }
+
+  function getDominantEdgeColor(img) {
+    if (iconSelectedColor) return iconSelectedColor;
+    var c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    var w = img.width, h = img.height;
+    var data = ctx.getImageData(0, 0, w, h).data;
+    var count = {};
+    function sample(x, y) {
+      var i = (y * w + x) * 4;
+      var key = data[i] + ',' + data[i+1] + ',' + data[i+2];
+      count[key] = (count[key] || 0) + 1;
+    }
+    for (var y = 0; y < Math.floor(0.2 * h); y++)
+      for (var x = 0; x < w; x++) sample(x, y);
+    for (var y = 0; y < h; y++)
+      for (var x = 0; x < Math.floor(0.2 * w); x++) sample(x, y);
+    var key = Object.keys(count).reduce(function (a, b) { return count[a] >= count[b] ? a : b; });
+    return key.split(',').map(Number);
+  }
+
+  function roundRectPath(ctx, x, y, w, h, r) {
+    if (r <= 0) { ctx.rect(x, y, w, h); return; }
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.arc(x + w - r, y + r, r, -Math.PI/2, 0);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.arc(x + w - r, y + h - r, r, 0, Math.PI/2);
+    ctx.lineTo(x + r, y + h);
+    ctx.arc(x + r, y + h - r, r, Math.PI/2, Math.PI);
+    ctx.lineTo(x, y + r);
+    ctx.arc(x + r, y + r, r, Math.PI, Math.PI*1.5);
+    ctx.closePath();
+  }
+
+  function drawRounded(img, size, radius) {
+    var c = document.createElement('canvas');
+    c.width = c.height = size;
+    var ctx = c.getContext('2d');
+    roundRectPath(ctx, 0, 0, size, size, radius);
+    ctx.clip();
+    var scale = Math.max(size / img.width, size / img.height);
+    var sw = img.width * scale, sh = img.height * scale;
+    ctx.drawImage(img, (size - sw) / 2, (size - sh) / 2, sw, sh);
+    return c;
+  }
+
+  function drawPadded(canvas, padding) {
+    if (padding <= 0) return canvas;
+    var w = canvas.width + 2 * padding, h = canvas.height + 2 * padding;
+    var c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    var ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, w, h);
+    ctx.drawImage(canvas, padding, padding);
+    return c;
+  }
+
+  function resizeToCanvas(img, w, h) {
+    var c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    var ctx = c.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+    return c;
+  }
+
+  function iconCanvasToBlob(canvas, mime) {
+    return new Promise(function (resolve) {
+      canvas.toBlob(function (blob) { resolve(blob); }, mime || 'image/png');
+    });
+  }
+
+  function runAndroid(img, folder) {
+    var bg = getDominantEdgeColor(img);
+    var sizes = [[16,16],[114,114],[216,216],[256,256],[512,512]];
+    var list = [];
+    return (async function () {
+      for (var i = 0; i < sizes.length; i++) {
+        var c = resizeToCanvas(img, sizes[i][0], sizes[i][1]);
+        var blob = await iconCanvasToBlob(c);
+        list.push({ path: folder + '/' + sizes[i][0] + '_' + sizes[i][1] + '.png', name: sizes[i][0] + '_' + sizes[i][1] + '.png', blob: blob, folder: folder });
+      }
+      var bgCanvas = document.createElement('canvas');
+      bgCanvas.width = 324;
+      bgCanvas.height = 324;
+      var bctx = bgCanvas.getContext('2d');
+      bctx.fillStyle = 'rgb(' + bg[0] + ',' + bg[1] + ',' + bg[2] + ')';
+      bctx.fillRect(0, 0, 324, 324);
+      list.push({ path: folder + '/app_icon_background.png', name: 'app_icon_background.png', blob: await iconCanvasToBlob(bgCanvas), folder: folder });
+      var c = drawRounded(img, 120, 12);
+      c = drawPadded(c, 12);
+      list.push({ path: folder + '/app_icon.png', name: 'app_icon.png', blob: await iconCanvasToBlob(c), folder: folder });
+      c = resizeToCanvas(img, 214, 214);
+      c = drawPadded(c, 55);
+      list.push({ path: folder + '/app_icon_foreground.png', name: 'app_icon_foreground.png', blob: await iconCanvasToBlob(c), folder: folder });
+      c = drawRounded(img, 132, 66);
+      c = drawPadded(c, 6);
+      list.push({ path: folder + '/app_icon_round.png', name: 'app_icon_round.png', blob: await iconCanvasToBlob(c), folder: folder });
+      return list;
+    })();
+  }
+
+  function compressWithTinyPNG(blob, apiKey) {
+    var auth = 'Basic ' + btoa('api:' + apiKey);
+    return fetch('https://api.tinify.com/shrink', {
+      method: 'POST',
+      headers: { 'Authorization': auth, 'Content-Type': 'application/octet-stream' },
+      body: blob
+    }).then(function (res) {
+      if (!res.ok) throw new Error('TinyPNG: ' + (res.status === 401 ? 'API Key 无效' : res.status === 429 ? '本月次数已用完' : '请求失败 ' + res.status));
+      return res.json();
+    }).then(function (data) {
+      if (!data.output || !data.output.url) throw new Error('TinyPNG 返回异常');
+      return fetch(data.output.url, { headers: { 'Authorization': auth } });
+    }).then(function (res) {
+      if (!res.ok) throw new Error('TinyPNG 获取结果失败');
+      return res.blob();
+    });
+  }
+
+  function compressUnder1MB(canvas, maxBytes) {
+    maxBytes = maxBytes || 1024000;
+    return new Promise(function (resolve) {
+      function tryQuality(q) {
+        if (q < 0.1) {
+          iconCanvasToBlob(canvas, 'image/png').then(resolve);
+          return;
+        }
+        canvas.toBlob(function (blob) {
+          if (blob && blob.size <= maxBytes) {
+            resolve(blob);
+          } else {
+            tryQuality(Math.max(0.1, q - 0.1));
+          }
+        }, 'image/jpeg', q);
+      }
+      canvas.toBlob(function (blob) {
+        if (blob && blob.size <= maxBytes) {
+          resolve(blob);
+        } else {
+          tryQuality(0.9);
+        }
+      }, 'image/png');
+    });
+  }
+
+  function runGoogle(img, folder) {
+    var bg = getDominantEdgeColor(img);
+    var list = [];
+    var tinypngKeyEl = document.getElementById('tinypngKey');
+    var apiKey = tinypngKeyEl ? (tinypngKeyEl.value || '').trim() : '';
+    return (async function () {
+      var c512 = resizeToCanvas(img, 512, 512);
+      var blob512 = await iconCanvasToBlob(c512);
+      if (blob512.size > 1024000) {
+        if (apiKey) {
+          try {
+            blob512 = await compressWithTinyPNG(blob512, apiKey);
+          } catch (e) {
+            if (typeof console !== 'undefined' && console.warn) console.warn('TinyPNG 压缩失败，使用未压缩 PNG：', e.message);
+            list.push({ path: folder + '/512_512.png', name: '512_512.png', blob: await iconCanvasToBlob(c512), folder: folder });
+            blob512 = null;
+          }
+        }
+        if (blob512) {
+          if (blob512.size > 1024000) {
+            blob512 = await compressUnder1MB(c512, 1024000);
+            list.push({ path: folder + '/512_512.jpg', name: '512_512.jpg', blob: blob512, folder: folder });
+          } else {
+            list.push({ path: folder + '/512_512.png', name: '512_512.png', blob: blob512, folder: folder });
+          }
+        }
+      } else {
+        list.push({ path: folder + '/512_512.png', name: '512_512.png', blob: blob512, folder: folder });
+      }
+      var bgCanvas = document.createElement('canvas');
+      bgCanvas.width = 324;
+      bgCanvas.height = 324;
+      var bctx = bgCanvas.getContext('2d');
+      bctx.fillStyle = 'rgb(' + bg[0] + ',' + bg[1] + ',' + bg[2] + ')';
+      bctx.fillRect(0, 0, 324, 324);
+      list.push({ path: folder + '/app_icon_background.png', name: 'app_icon_background.png', blob: await iconCanvasToBlob(bgCanvas), folder: folder });
+      var c = drawRounded(img, 120, 12);
+      c = drawPadded(c, 12);
+      list.push({ path: folder + '/app_icon.png', name: 'app_icon.png', blob: await iconCanvasToBlob(c), folder: folder });
+      c = resizeToCanvas(img, 214, 214);
+      c = drawPadded(c, 55);
+      list.push({ path: folder + '/app_icon_foreground.png', name: 'app_icon_foreground.png', blob: await iconCanvasToBlob(c), folder: folder });
+      c = drawRounded(img, 132, 66);
+      c = drawPadded(c, 6);
+      list.push({ path: folder + '/app_icon_round.png', name: 'app_icon_round.png', blob: await iconCanvasToBlob(c), folder: folder });
+      return list;
+    })();
+  }
+
+  function runMinigame(img, folder) {
+    var sizes = [[144,144],[148,148],[216,216],[220,220],[256,256],[512,512],[600,600]];
+    var list = [];
+    return (async function () {
+      for (var i = 0; i < sizes.length; i++) {
+        var c = resizeToCanvas(img, sizes[i][0], sizes[i][1]);
+        list.push({ path: folder + '/' + sizes[i][0] + '_' + sizes[i][1] + '.png', name: sizes[i][0] + '_' + sizes[i][1] + '.png', blob: await iconCanvasToBlob(c), folder: folder });
+      }
+      var c = drawRounded(img, 96, 16);
+      list.push({ path: folder + '/96_96.png', name: '96_96.png', blob: await iconCanvasToBlob(c), folder: folder });
+      c = drawRounded(img, 222, 111);
+      list.push({ path: folder + '/222_222.png', name: '222_222.png', blob: await iconCanvasToBlob(c), folder: folder });
+      return list;
+    })();
+  }
+
+  async function iconGeneratePreview() {
+    if (!iconSourceImage) return;
+    var android = chkAndroid.checked;
+    var google = chkGoogle.checked;
+    var minigame = chkMinigame.checked;
+    if (!android && !google && !minigame) {
+      iconStatus.textContent = '请至少勾选一个平台';
+      return;
+    }
+    iconBtnGenerate.disabled = true;
+    iconStatus.textContent = '正在生成...';
+    iconGeneratedList = [];
+    try {
+      if (android) iconGeneratedList = iconGeneratedList.concat(await runAndroid(iconSourceImage, '安卓'));
+      if (google) iconGeneratedList = iconGeneratedList.concat(await runGoogle(iconSourceImage, '谷歌'));
+      if (minigame) iconGeneratedList = iconGeneratedList.concat(await runMinigame(iconSourceImage, '小游戏'));
+      iconPreviewGrid.innerHTML = '';
+      iconGeneratedList.forEach(function (item) {
+        item.dataUrl = URL.createObjectURL(item.blob);
+        var div = document.createElement('div');
+        div.className = 'preview-item';
+        var img = document.createElement('img');
+        img.src = item.dataUrl;
+        img.alt = item.name;
+        var nameEl = document.createElement('div');
+        nameEl.className = 'name';
+        nameEl.textContent = item.name;
+        div.appendChild(img);
+        div.appendChild(nameEl);
+        iconPreviewGrid.appendChild(div);
+      });
+      iconPreviewSection.classList.remove('hidden');
+      iconStatus.textContent = '已生成 ' + iconGeneratedList.length + ' 个文件，请预览后点击「下载 ZIP」';
+      iconBtnDownload.disabled = false;
+    } catch (err) {
+      iconStatus.textContent = '错误: ' + err.message;
+    }
+    iconBtnGenerate.disabled = false;
+  }
+
+  iconBtnGenerate.addEventListener('click', iconGeneratePreview);
+
+  iconBtnDownload.addEventListener('click', async function () {
+    if (!iconGeneratedList.length) return;
+    iconBtnDownload.disabled = true;
+    iconStatus.textContent = '正在打包 ZIP...';
+    try {
+      var zip = new JSZip();
+      iconGeneratedList.forEach(function (item) {
+        zip.file(item.path, item.blob);
+      });
+      var blob = await zip.generateAsync({ type: 'blob' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'icon_export.zip';
+      a.click();
+      URL.revokeObjectURL(a.href);
+      iconStatus.textContent = '已下载 icon_export.zip';
+    } catch (err) {
+      iconStatus.textContent = '错误: ' + err.message;
+    }
+    iconBtnDownload.disabled = false;
+  });
+})();
+  </script>
+</body>
+</html>
