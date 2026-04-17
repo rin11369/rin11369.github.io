@@ -121,15 +121,26 @@
       cursor: crosshair;
     }
     .preview-wrap .info { font-size: 13px; color: var(--text-secondary); }
-    .platforms { display: flex; flex-direction: column; gap: 8px; }
-    .platforms label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
-    .platforms input[type="checkbox"] { width: 18px; height: 18px; }
+    #iconChannelSelect {
+      padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+      font-size: 14px; min-width: 180px; font-family: inherit; background: var(--card); color: var(--text);
+    }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45);
+      display: flex; align-items: center; justify-content: center;
+      z-index: 9999; padding: 16px;
+    }
+    .modal-box {
+      background: var(--card); border-radius: var(--radius);
+      box-shadow: 0 8px 32px rgba(0,0,0,.15);
+      padding: 20px; max-width: 420px; width: 100%;
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <h1>图片与图标工具</h1>
-    <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后保存。保存为真实文件夹（非压缩包）：先选父目录，再输入子文件夹名称。需 Chrome / Edge 等，且页面为 HTTPS 或 localhost。</p>
+    <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后保存。保存为真实文件夹（非压缩包）：先选父目录，再在页面里输入子文件夹名称（飞书等内嵌浏览器不支持系统弹窗 <code>prompt</code>，已改为页面内输入）。需 Chrome / Edge 等，且页面为 HTTPS 或 localhost。</p>
 
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="batch">批量改尺寸</button>
@@ -209,10 +220,14 @@
             <div class="info" id="iconColorHint"></div>
           </div>
         </div>
-        <div class="platforms">
-          <label><input type="checkbox" id="chkAndroid"> 安卓</label>
-          <label><input type="checkbox" id="chkGoogle"> 谷歌</label>
-          <label><input type="checkbox" id="chkMinigame"> 小游戏</label>
+        <div class="opt-row" style="margin-top:12px;align-items:center">
+          <label for="iconChannelSelect" style="min-width:auto">请选择你的渠道</label>
+          <select id="iconChannelSelect" aria-label="请选择你的渠道">
+            <option value="" selected>请选择</option>
+            <option value="android">安卓</option>
+            <option value="google">谷歌</option>
+            <option value="minigame">小游戏</option>
+          </select>
         </div>
         <div class="actions">
           <button type="button" class="btn btn-primary" id="iconBtnGenerate" disabled>生成预览</button>
@@ -224,6 +239,18 @@
       <div id="iconPreviewSection" class="card preview-section hidden">
         <h3>Icon 生成结果预览（确认无误后点击「保存到文件夹」）</h3>
         <div class="preview-grid" id="iconPreviewGrid"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="packFolderModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="packFolderModalTitle">
+    <div class="modal-box">
+      <div id="packFolderModalTitle" style="font-weight:600;margin-bottom:8px">子文件夹名称</div>
+      <p class="hint" style="margin:0 0 12px;font-size:13px;color:var(--text-secondary);line-height:1.5">将创建在您刚选择的父目录下。飞书、企业微信等内嵌页面请在此输入，勿依赖浏览器系统弹窗。</p>
+      <input type="text" id="packFolderModalInput" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:16px;box-sizing:border-box">
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary" id="packFolderModalCancel">取消</button>
+        <button type="button" class="btn btn-primary" id="packFolderModalOk">确定</button>
       </div>
     </div>
   </div>
@@ -269,15 +296,53 @@
     return s;
   }
 
-  function askPackFolderName(defaultName) {
-    var def = defaultName || '导出图片';
-    var input = window.prompt('请输入要创建的子文件夹名称（将建在所选目录下）', def);
-    if (input === null) return null;
-    return sanitizePackFolderName(input.trim() || def);
+  /**
+   * 页面内询问子文件夹名（飞书/部分 WebView 会拦截 window.prompt 并当作取消，导致误显示「已取消」）。
+   * @returns {Promise<string|null>} 已清理的名称；取消为 null
+   */
+  function askPackFolderNameModal(defaultName) {
+    return new Promise(function (resolve) {
+      var modal = document.getElementById('packFolderModal');
+      var inp = document.getElementById('packFolderModalInput');
+      var btnOk = document.getElementById('packFolderModalOk');
+      var btnCancel = document.getElementById('packFolderModalCancel');
+      var def = defaultName || '导出图片';
+      function finish(val) {
+        modal.classList.add('hidden');
+        modal.removeEventListener('click', onOverlay);
+        btnOk.removeEventListener('click', onOk);
+        btnCancel.removeEventListener('click', onCancel);
+        inp.removeEventListener('keydown', onKey);
+        resolve(val);
+      }
+      function onOk() {
+        finish(sanitizePackFolderName(inp.value.trim() || def));
+      }
+      function onCancel() {
+        finish(null);
+      }
+      function onOverlay(e) {
+        if (e.target === modal) onCancel();
+      }
+      function onKey(e) {
+        if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+      }
+      inp.value = def;
+      modal.classList.remove('hidden');
+      btnOk.addEventListener('click', onOk);
+      btnCancel.addEventListener('click', onCancel);
+      modal.addEventListener('click', onOverlay);
+      inp.addEventListener('keydown', onKey);
+      setTimeout(function () {
+        inp.focus();
+        inp.select();
+      }, 0);
+    });
   }
 
   /**
-   * 直接写入磁盘文件夹（无压缩包）。必须先 await showDirectoryPicker，再 prompt，以免丢失用户手势。
+   * 直接写入磁盘文件夹（无压缩包）。先 await showDirectoryPicker，再在页面内输入子文件夹名。
    * @param {{ path: string, blob: Blob }[]} entries
    * @param {string} defaultPromptName
    */
@@ -290,9 +355,8 @@
       if (e.name === 'AbortError') return 'abort';
       throw e;
     }
-    var packInput = askPackFolderName(defaultPromptName || '导出图片');
-    if (packInput === null) return 'abort';
-    var safePack = sanitizePackFolderName(packInput);
+    var safePack = await askPackFolderNameModal(defaultPromptName || '导出图片');
+    if (safePack === null) return 'abort';
     var root = await dirHandle.getDirectoryHandle(safePack, { create: true });
     for (var i = 0; i < entries.length; i++) {
       var rel = String(entries[i].path || 'file').replace(/\\/g, '/');
@@ -592,9 +656,7 @@
   var iconPreviewImg = document.getElementById('iconPreviewImg');
   var iconImgInfo = document.getElementById('iconImgInfo');
   var iconColorHint = document.getElementById('iconColorHint');
-  var chkAndroid = document.getElementById('chkAndroid');
-  var chkGoogle = document.getElementById('chkGoogle');
-  var chkMinigame = document.getElementById('chkMinigame');
+  var iconChannelSelect = document.getElementById('iconChannelSelect');
   var iconBtnGenerate = document.getElementById('iconBtnGenerate');
   var iconBtnDownload = document.getElementById('iconBtnDownload');
   var iconBtnReset = document.getElementById('iconBtnReset');
@@ -836,13 +898,14 @@
 
   async function iconGeneratePreview() {
     if (!iconSourceImage) return;
-    var android = chkAndroid.checked;
-    var google = chkGoogle.checked;
-    var minigame = chkMinigame.checked;
-    if (!android && !google && !minigame) {
-      iconStatus.textContent = '请至少勾选一个平台';
+    var ch = iconChannelSelect ? iconChannelSelect.value : '';
+    if (!ch) {
+      iconStatus.textContent = '请选择你的渠道';
       return;
     }
+    var android = ch === 'android';
+    var google = ch === 'google';
+    var minigame = ch === 'minigame';
     iconBtnGenerate.disabled = true;
     iconStatus.textContent = '正在生成...';
     iconGeneratedList = [];
