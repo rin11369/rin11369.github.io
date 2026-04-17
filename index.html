@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>图片与图标工具 - 飞书小工具</title>
+  <title>图片与图标工具1 - 飞书小工具</title>
   <style>
     * { box-sizing: border-box; }
     :root {
@@ -139,7 +139,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>图片与图标工具</h1>
+    <h1>图片与图标工具1</h1>
     <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后保存。保存为真实文件夹（非压缩包）：先选父目录，再在页面里输入子文件夹名称（飞书等内嵌浏览器不支持系统弹窗 <code>prompt</code>，已改为页面内输入）。需 Chrome / Edge 等，且页面为 HTTPS 或 localhost。</p>
 
     <div class="tabs">
@@ -307,9 +307,10 @@
       var btnOk = document.getElementById('packFolderModalOk');
       var btnCancel = document.getElementById('packFolderModalCancel');
       var def = defaultName || '导出图片';
+      var overlayBound = false;
       function finish(val) {
         modal.classList.add('hidden');
-        modal.removeEventListener('click', onOverlay);
+        if (overlayBound) modal.removeEventListener('click', onOverlay);
         btnOk.removeEventListener('click', onOk);
         btnCancel.removeEventListener('click', onCancel);
         inp.removeEventListener('keydown', onKey);
@@ -328,16 +329,25 @@
         if (e.key === 'Enter') { e.preventDefault(); onOk(); }
         if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
       }
-      inp.value = def;
-      modal.classList.remove('hidden');
-      btnOk.addEventListener('click', onOk);
-      btnCancel.addEventListener('click', onCancel);
-      modal.addEventListener('click', onOverlay);
-      inp.addEventListener('keydown', onKey);
+      /**
+       * 在 showDirectoryPicker 刚关闭后立刻弹出层时，部分内嵌浏览器（飞书等）会把同一指针事件落到遮罩上，
+       * 误触发「点空白取消」。延迟再显示并延后绑定遮罩点击。
+       */
       setTimeout(function () {
-        inp.focus();
-        inp.select();
-      }, 0);
+        inp.value = def;
+        modal.classList.remove('hidden');
+        btnOk.addEventListener('click', onOk);
+        btnCancel.addEventListener('click', onCancel);
+        inp.addEventListener('keydown', onKey);
+        setTimeout(function () {
+          inp.focus();
+          inp.select();
+        }, 0);
+        setTimeout(function () {
+          modal.addEventListener('click', onOverlay);
+          overlayBound = true;
+        }, 400);
+      }, 200);
     });
   }
 
@@ -352,11 +362,11 @@
     try {
       dirHandle = await window.showDirectoryPicker();
     } catch (e) {
-      if (e.name === 'AbortError') return 'abort';
+      if (e.name === 'AbortError') return 'abort-picker';
       throw e;
     }
     var safePack = await askPackFolderNameModal(defaultPromptName || '导出图片');
-    if (safePack === null) return 'abort';
+    if (safePack === null) return 'abort-foldername';
     var root = await dirHandle.getDirectoryHandle(safePack, { create: true });
     for (var i = 0; i < entries.length; i++) {
       var rel = String(entries[i].path || 'file').replace(/\\/g, '/');
@@ -638,6 +648,10 @@
       var folderResult = await saveEntriesToPackFolder(entries, '导出图片');
       if (folderResult && folderResult.ok) {
         statusEl.textContent = '已写入「' + folderResult.displayPath + '」';
+      } else if (folderResult === 'abort-picker') {
+        statusEl.textContent = '未保存：已在系统对话框里取消选择文件夹。若在飞书里一保存就出现本提示，多半是内嵌页不支持「保存到文件夹」，请复制链接用 Chrome / Edge 打开。';
+      } else if (folderResult === 'abort-foldername') {
+        statusEl.textContent = '未保存：已关闭子文件夹名称输入。可再次点击「保存到文件夹」重试。';
       } else if (folderResult === 'abort') {
         statusEl.textContent = '已取消';
       } else {
@@ -950,6 +964,10 @@
       var folderResult = await saveEntriesToPackFolder(entries, 'icon导出');
       if (folderResult && folderResult.ok) {
         iconStatus.textContent = '已写入「' + folderResult.displayPath + '」';
+      } else if (folderResult === 'abort-picker') {
+        iconStatus.textContent = '未保存：已在系统对话框里取消选择文件夹。若在飞书里一保存就出现本提示，多半是内嵌页不支持「保存到文件夹」，请复制链接用 Chrome / Edge 打开。';
+      } else if (folderResult === 'abort-foldername') {
+        iconStatus.textContent = '未保存：已关闭子文件夹名称输入。可再次点击「保存到文件夹」重试。';
       } else if (folderResult === 'abort') {
         iconStatus.textContent = '已取消';
       } else {
