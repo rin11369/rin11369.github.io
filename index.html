@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>图片与图标工具1 - 飞书小工具</title>
+  <title>图片与图标工具 - 飞书小工具</title>
   <style>
     * { box-sizing: border-box; }
     :root {
@@ -139,7 +139,7 @@
 </head>
 <body>
   <div class="container">
-    <h1>图片与图标工具1</h1>
+    <h1>图片与图标工具</h1>
     <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后保存。保存为真实文件夹（非压缩包）：先选父目录，再在页面里输入子文件夹名称（飞书等内嵌浏览器不支持系统弹窗 <code>prompt</code>，已改为页面内输入）。需 Chrome / Edge 等，且页面为 HTTPS 或 localhost。</p>
 
     <div class="tabs">
@@ -257,6 +257,18 @@
     </div>
   </div>
 
+  <div id="zipDownloadModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="zipDownloadModalTitle">
+    <div class="modal-box">
+      <div id="zipDownloadModalTitle" style="font-weight:600;margin-bottom:8px">ZIP 文件名</div>
+      <p class="hint" style="margin:0 0 12px;font-size:13px;color:var(--text-secondary);line-height:1.5">输入下载的压缩包名称（无需写 .zip，确定后会自动加上）。</p>
+      <input type="text" id="zipDownloadModalInput" autocomplete="off" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;margin-bottom:16px;box-sizing:border-box">
+      <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
+        <button type="button" class="btn btn-secondary" id="zipDownloadModalCancel">取消</button>
+        <button type="button" class="btn btn-primary" id="zipDownloadModalOk">确定</button>
+      </div>
+    </div>
+  </div>
+
   <script>
 (function () {
   // ---------- 标签页切换 ----------
@@ -297,6 +309,70 @@
     if (!s) s = '导出图片';
     if (s.length > 200) s = s.slice(0, 200);
     return s;
+  }
+
+  /** @param {string} raw 用户输入（可含或不含 .zip） @param {string} defaultBase 默认主文件名，不含扩展名 */
+  function sanitizeZipDownloadName(raw, defaultBase) {
+    var def = String(defaultBase || '导出').trim().replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+/, '').replace(/\.+$/g, '') || '导出';
+    var s = String(raw != null ? raw : '').trim();
+    if (!s) s = def;
+    s = s.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+/, '');
+    if (/\.zip$/i.test(s)) s = s.replace(/\.zip$/i, '');
+    s = s.trim() || def;
+    if (s.length > 180) s = s.slice(0, 180);
+    return s + '.zip';
+  }
+
+  /**
+   * 页面内询问 ZIP 文件名（与保存文件夹命名一致，避免飞书内 prompt 不可用）。
+   * @param {string} defaultBase 不含 .zip 的默认名
+   * @returns {Promise<string|null>} 含 .zip 的文件名；取消为 null
+   */
+  function askZipFileNameModal(defaultBase) {
+    return new Promise(function (resolve) {
+      var modal = document.getElementById('zipDownloadModal');
+      var inp = document.getElementById('zipDownloadModalInput');
+      var btnOk = document.getElementById('zipDownloadModalOk');
+      var btnCancel = document.getElementById('zipDownloadModalCancel');
+      var def = String(defaultBase || '导出').trim() || '导出';
+      var overlayBound = false;
+      function finish(val) {
+        modal.classList.add('hidden');
+        if (overlayBound) modal.removeEventListener('click', onOverlay);
+        btnOk.removeEventListener('click', onOk);
+        btnCancel.removeEventListener('click', onCancel);
+        inp.removeEventListener('keydown', onKey);
+        resolve(val);
+      }
+      function onOk() {
+        finish(sanitizeZipDownloadName(inp.value, def));
+      }
+      function onCancel() {
+        finish(null);
+      }
+      function onOverlay(e) {
+        if (e.target === modal) onCancel();
+      }
+      function onKey(e) {
+        if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+      }
+      setTimeout(function () {
+        inp.value = def;
+        modal.classList.remove('hidden');
+        btnOk.addEventListener('click', onOk);
+        btnCancel.addEventListener('click', onCancel);
+        inp.addEventListener('keydown', onKey);
+        setTimeout(function () {
+          inp.focus();
+          inp.select();
+        }, 0);
+        setTimeout(function () {
+          modal.addEventListener('click', onOverlay);
+          overlayBound = true;
+        }, 400);
+      }, 150);
+    });
   }
 
   /**
@@ -771,14 +847,21 @@
     if (!generatedBlobs.length) return;
     btnDownloadZip.disabled = true;
     btnDownload.disabled = true;
-    statusEl.textContent = '正在打包 ZIP…';
     try {
+      var zipFileName = await askZipFileNameModal('导出图片');
+      if (zipFileName === null) {
+        statusEl.textContent = '已取消 ZIP 下载';
+        btnDownloadZip.disabled = false;
+        btnDownload.disabled = false;
+        return;
+      }
+      statusEl.textContent = '正在打包 ZIP…';
       var entries = generatedBlobs.map(function (item) {
         return { path: item.name, blob: item.blob };
       });
       var zipBlob = await buildZipBlob(entries);
-      triggerDownloadBlob(zipBlob, '导出图片.zip');
-      statusEl.textContent = '已开始下载「导出图片.zip」';
+      triggerDownloadBlob(zipBlob, zipFileName);
+      statusEl.textContent = '已开始下载「' + zipFileName + '」';
     } catch (err) {
       statusEl.textContent = 'ZIP 失败: ' + err.message;
     }
@@ -1111,14 +1194,21 @@
     if (!iconGeneratedList.length) return;
     iconBtnDownloadZip.disabled = true;
     iconBtnDownload.disabled = true;
-    iconStatus.textContent = '正在打包 ZIP…';
     try {
+      var zipFileName = await askZipFileNameModal('icon导出');
+      if (zipFileName === null) {
+        iconStatus.textContent = '已取消 ZIP 下载';
+        iconBtnDownloadZip.disabled = false;
+        iconBtnDownload.disabled = false;
+        return;
+      }
+      iconStatus.textContent = '正在打包 ZIP…';
       var entries = iconGeneratedList.map(function (item) {
         return { path: item.path, blob: item.blob };
       });
       var zipBlob = await buildZipBlob(entries);
-      triggerDownloadBlob(zipBlob, 'icon导出.zip');
-      iconStatus.textContent = '已开始下载「icon导出.zip」';
+      triggerDownloadBlob(zipBlob, zipFileName);
+      iconStatus.textContent = '已开始下载「' + zipFileName + '」';
     } catch (err) {
       iconStatus.textContent = 'ZIP 失败: ' + err.message;
     }
