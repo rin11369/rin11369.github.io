@@ -194,11 +194,12 @@
         <div class="actions">
           <button type="button" class="btn btn-primary" id="btnGenerate" disabled>生成预览</button>
           <button type="button" class="btn btn-secondary" id="btnDownload" disabled>保存到文件夹</button>
+          <button type="button" class="btn btn-secondary" id="btnDownloadZip" disabled>ZIP 打包下载</button>
         </div>
         <div class="status" id="status"></div>
       </div>
       <div id="previewSection" class="card preview-section hidden">
-        <h3>生成结果预览（确认无误后点击「保存到文件夹」）</h3>
+        <h3>生成结果预览（保存到文件夹或 ZIP 打包下载）</h3>
         <div class="preview-grid" id="previewGrid"></div>
       </div>
     </div>
@@ -232,12 +233,13 @@
         <div class="actions">
           <button type="button" class="btn btn-primary" id="iconBtnGenerate" disabled>生成预览</button>
           <button type="button" class="btn btn-secondary" id="iconBtnDownload" disabled>保存到文件夹</button>
+          <button type="button" class="btn btn-secondary" id="iconBtnDownloadZip" disabled>ZIP 打包下载</button>
           <button type="button" class="btn btn-secondary" id="iconBtnReset">重新选择</button>
         </div>
         <div class="status" id="iconStatus"></div>
       </div>
       <div id="iconPreviewSection" class="card preview-section hidden">
-        <h3>Icon 生成结果预览（确认无误后点击「保存到文件夹」）</h3>
+        <h3>Icon 生成结果预览（保存到文件夹或 ZIP 打包下载）</h3>
         <div class="preview-grid" id="iconPreviewGrid"></div>
       </div>
     </div>
@@ -278,6 +280,7 @@
   var batchScaleRow = document.getElementById('batchScaleRow');
   var btnGenerate = document.getElementById('btnGenerate');
   var btnDownload = document.getElementById('btnDownload');
+  var btnDownloadZip = document.getElementById('btnDownloadZip');
   var statusEl = document.getElementById('status');
   var selectedPreviewSection = document.getElementById('selectedPreviewSection');
   var selectedPreviewGrid = document.getElementById('selectedPreviewGrid');
@@ -385,6 +388,103 @@
     var parentName = typeof dirHandle.name === 'string' ? dirHandle.name : '';
     var displayPath = parentName ? parentName + '/' + safePack : safePack;
     return { ok: true, packName: safePack, parentName: parentName, displayPath: displayPath };
+  }
+
+  function crc32Bytes(u8) {
+    var t = crc32Bytes.t;
+    if (!t) {
+      t = [];
+      for (var i = 0; i < 256; i++) {
+        var c = i;
+        for (var k = 0; k < 8; k++) c = ((c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1)) >>> 0;
+        t[i] = c >>> 0;
+      }
+      crc32Bytes.t = t;
+    }
+    var n = (-1) >>> 0;
+    for (var i = 0; i < u8.length; i++) n = (n >>> 8) ^ t[(n ^ u8[i]) & 0xff];
+    return (n ^ (-1)) >>> 0;
+  }
+
+  /**
+   * 无压缩（STORE）ZIP，UTF-8 文件名。供飞书内嵌等无法使用 showDirectoryPicker 的环境。
+   * @param {{ path: string, blob: Blob }[]} entries
+   */
+  async function buildZipBlob(entries) {
+    var chunks = [];
+    var centralChunks = [];
+    var localBase = 0;
+    for (var i = 0; i < entries.length; i++) {
+      var path = String(entries[i].path || 'file').replace(/^\/+/, '').replace(/\\/g, '/');
+      var nameBytes = new TextEncoder().encode(path);
+      var ab = await entries[i].blob.arrayBuffer();
+      var body = new Uint8Array(ab);
+      var crc = crc32Bytes(body);
+      var sz = body.length;
+      var nl = nameBytes.length;
+      var lh = new Uint8Array(30 + nl);
+      var ldv = new DataView(lh.buffer);
+      ldv.setUint32(0, 0x04034b50, true);
+      ldv.setUint16(4, 20, true);
+      ldv.setUint16(6, 0x0800, true);
+      ldv.setUint16(8, 0, true);
+      ldv.setUint16(10, 0, true);
+      ldv.setUint16(12, 0, true);
+      ldv.setUint32(14, crc, true);
+      ldv.setUint32(18, sz, true);
+      ldv.setUint32(22, sz, true);
+      ldv.setUint16(26, nl, true);
+      ldv.setUint16(28, 0, true);
+      lh.set(nameBytes, 30);
+      var ch = new Uint8Array(46 + nl);
+      var cdv = new DataView(ch.buffer);
+      cdv.setUint32(0, 0x02014b50, true);
+      cdv.setUint16(4, 0x0314, true);
+      cdv.setUint16(6, 20, true);
+      cdv.setUint16(8, 0x0800, true);
+      cdv.setUint16(10, 0, true);
+      cdv.setUint16(12, 0, true);
+      cdv.setUint16(14, 0, true);
+      cdv.setUint32(16, crc, true);
+      cdv.setUint32(20, sz, true);
+      cdv.setUint32(24, sz, true);
+      cdv.setUint16(28, nl, true);
+      cdv.setUint16(30, 0, true);
+      cdv.setUint16(32, 0, true);
+      cdv.setUint16(34, 0, true);
+      cdv.setUint32(42, localBase, true);
+      ch.set(nameBytes, 46);
+      chunks.push(lh, body);
+      centralChunks.push(ch);
+      localBase += 30 + nl + sz;
+    }
+    var centralOffset = localBase;
+    var centralLen = 0;
+    for (var j = 0; j < centralChunks.length; j++) {
+      chunks.push(centralChunks[j]);
+      centralLen += centralChunks[j].length;
+    }
+    var eocd = new Uint8Array(22);
+    var edv = new DataView(eocd.buffer);
+    edv.setUint32(0, 0x06054b50, true);
+    edv.setUint16(8, centralChunks.length, true);
+    edv.setUint16(10, centralChunks.length, true);
+    edv.setUint32(12, centralLen, true);
+    edv.setUint32(16, centralOffset, true);
+    chunks.push(eocd);
+    return new Blob(chunks, { type: 'application/zip' });
+  }
+
+  function triggerDownloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 2500);
   }
 
   function getBatchOutputFormat(file) {
@@ -515,6 +615,7 @@
     btnGenerate.disabled = false;
     previewSection.classList.add('hidden');
     btnDownload.disabled = true;
+    btnDownloadZip.disabled = true;
     generatedBlobs = [];
     selectedCountEl.textContent = files.length;
     selectedPreviewSection.classList.remove('hidden');
@@ -629,8 +730,9 @@
         div.appendChild(nameEl);
         previewGrid.appendChild(div);
       });
-      statusEl.textContent = '已生成 ' + generatedBlobs.length + ' 张，请预览后点击「保存到文件夹」';
+      statusEl.textContent = '已生成 ' + generatedBlobs.length + ' 张，可保存到文件夹或 ZIP 打包下载（飞书内建议 ZIP）';
       btnDownload.disabled = false;
+      btnDownloadZip.disabled = false;
     } catch (err) {
       statusEl.textContent = '错误: ' + err.message;
     }
@@ -640,6 +742,7 @@
   btnDownload.addEventListener('click', async function () {
     if (!generatedBlobs.length) return;
     btnDownload.disabled = true;
+    btnDownloadZip.disabled = true;
     statusEl.textContent = '请在系统对话框中选择父文件夹…';
     try {
       var entries = generatedBlobs.map(function (item) {
@@ -649,17 +752,37 @@
       if (folderResult && folderResult.ok) {
         statusEl.textContent = '已写入「' + folderResult.displayPath + '」';
       } else if (folderResult === 'abort-picker') {
-        statusEl.textContent = '未保存：已在系统对话框里取消选择文件夹。若在飞书里一保存就出现本提示，多半是内嵌页不支持「保存到文件夹」，请复制链接用 Chrome / Edge 打开。';
+        statusEl.textContent = '未保存到文件夹（多为飞书内嵌不支持系统选目录）。请点「ZIP 打包下载」，或用 Chrome/Edge 打开本页再试「保存到文件夹」。';
       } else if (folderResult === 'abort-foldername') {
-        statusEl.textContent = '未保存：已关闭子文件夹名称输入。可再次点击「保存到文件夹」重试。';
+        statusEl.textContent = '未保存：已取消子文件夹名称。可再点「保存到文件夹」，或改用「ZIP 打包下载」。';
       } else if (folderResult === 'abort') {
         statusEl.textContent = '已取消';
       } else {
-        statusEl.textContent = '当前环境无法保存为文件夹，请使用 Chrome 或 Edge，并通过 HTTPS 或 localhost 打开本页。';
+        statusEl.textContent = '当前环境无法使用「保存到文件夹」。请点「ZIP 打包下载」，或在 Chrome/Edge 且 HTTPS 或 localhost 下打开。';
       }
     } catch (err) {
       statusEl.textContent = '错误: ' + err.message;
     }
+    btnDownload.disabled = false;
+    btnDownloadZip.disabled = false;
+  });
+
+  btnDownloadZip.addEventListener('click', async function () {
+    if (!generatedBlobs.length) return;
+    btnDownloadZip.disabled = true;
+    btnDownload.disabled = true;
+    statusEl.textContent = '正在打包 ZIP…';
+    try {
+      var entries = generatedBlobs.map(function (item) {
+        return { path: item.name, blob: item.blob };
+      });
+      var zipBlob = await buildZipBlob(entries);
+      triggerDownloadBlob(zipBlob, '导出图片.zip');
+      statusEl.textContent = '已开始下载「导出图片.zip」';
+    } catch (err) {
+      statusEl.textContent = 'ZIP 失败: ' + err.message;
+    }
+    btnDownloadZip.disabled = false;
     btnDownload.disabled = false;
   });
 
@@ -673,6 +796,7 @@
   var iconChannelSelect = document.getElementById('iconChannelSelect');
   var iconBtnGenerate = document.getElementById('iconBtnGenerate');
   var iconBtnDownload = document.getElementById('iconBtnDownload');
+  var iconBtnDownloadZip = document.getElementById('iconBtnDownloadZip');
   var iconBtnReset = document.getElementById('iconBtnReset');
   var iconStatus = document.getElementById('iconStatus');
   var iconPreviewSection = document.getElementById('iconPreviewSection');
@@ -736,6 +860,7 @@
     iconPreviewSection.classList.add('hidden');
     iconBtnGenerate.disabled = true;
     iconBtnDownload.disabled = true;
+    iconBtnDownloadZip.disabled = true;
   }
 
   function getDominantEdgeColor(img) {
@@ -943,8 +1068,9 @@
         iconPreviewGrid.appendChild(div);
       });
       iconPreviewSection.classList.remove('hidden');
-      iconStatus.textContent = '已生成 ' + iconGeneratedList.length + ' 个文件，请预览后点击「保存到文件夹」';
+      iconStatus.textContent = '已生成 ' + iconGeneratedList.length + ' 个文件，可保存到文件夹或 ZIP 打包下载（飞书内建议 ZIP）';
       iconBtnDownload.disabled = false;
+      iconBtnDownloadZip.disabled = false;
     } catch (err) {
       iconStatus.textContent = '错误: ' + err.message;
     }
@@ -956,6 +1082,7 @@
   iconBtnDownload.addEventListener('click', async function () {
     if (!iconGeneratedList.length) return;
     iconBtnDownload.disabled = true;
+    iconBtnDownloadZip.disabled = true;
     iconStatus.textContent = '请在系统对话框中选择父文件夹…';
     try {
       var entries = iconGeneratedList.map(function (item) {
@@ -965,17 +1092,37 @@
       if (folderResult && folderResult.ok) {
         iconStatus.textContent = '已写入「' + folderResult.displayPath + '」';
       } else if (folderResult === 'abort-picker') {
-        iconStatus.textContent = '未保存：已在系统对话框里取消选择文件夹。若在飞书里一保存就出现本提示，多半是内嵌页不支持「保存到文件夹」，请复制链接用 Chrome / Edge 打开。';
+        iconStatus.textContent = '未保存到文件夹（多为飞书内嵌不支持系统选目录）。请点「ZIP 打包下载」，或用 Chrome/Edge 打开本页再试「保存到文件夹」。';
       } else if (folderResult === 'abort-foldername') {
-        iconStatus.textContent = '未保存：已关闭子文件夹名称输入。可再次点击「保存到文件夹」重试。';
+        iconStatus.textContent = '未保存：已取消子文件夹名称。可再点「保存到文件夹」，或改用「ZIP 打包下载」。';
       } else if (folderResult === 'abort') {
         iconStatus.textContent = '已取消';
       } else {
-        iconStatus.textContent = '当前环境无法保存为文件夹，请使用 Chrome 或 Edge，并通过 HTTPS 或 localhost 打开本页。';
+        iconStatus.textContent = '当前环境无法使用「保存到文件夹」。请点「ZIP 打包下载」，或在 Chrome/Edge 且 HTTPS 或 localhost 下打开。';
       }
     } catch (err) {
       iconStatus.textContent = '错误: ' + err.message;
     }
+    iconBtnDownload.disabled = false;
+    iconBtnDownloadZip.disabled = false;
+  });
+
+  iconBtnDownloadZip.addEventListener('click', async function () {
+    if (!iconGeneratedList.length) return;
+    iconBtnDownloadZip.disabled = true;
+    iconBtnDownload.disabled = true;
+    iconStatus.textContent = '正在打包 ZIP…';
+    try {
+      var entries = iconGeneratedList.map(function (item) {
+        return { path: item.path, blob: item.blob };
+      });
+      var zipBlob = await buildZipBlob(entries);
+      triggerDownloadBlob(zipBlob, 'icon导出.zip');
+      iconStatus.textContent = '已开始下载「icon导出.zip」';
+    } catch (err) {
+      iconStatus.textContent = 'ZIP 失败: ' + err.message;
+    }
+    iconBtnDownloadZip.disabled = false;
     iconBtnDownload.disabled = false;
   });
 })();
