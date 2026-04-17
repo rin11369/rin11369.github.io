@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>图片与图标工具 - 飞书小工具</title>
-  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
   <style>
     * { box-sizing: border-box; }
     :root {
@@ -130,11 +129,20 @@
 <body>
   <div class="container">
     <h1>图片与图标工具</h1>
-    <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后下载。</p>
+    <p class="sub">批量改尺寸 / 一键生成安卓·谷歌·小游戏 Icon，预览后保存。保存为真实文件夹（非压缩包）：先选父目录，再输入子文件夹名称。需 Chrome / Edge 等，且页面为 HTTPS 或 localhost。</p>
 
     <div class="tabs">
       <button type="button" class="tab-btn active" data-tab="batch">批量改尺寸</button>
       <button type="button" class="tab-btn" data-tab="icon">一键改 Icon</button>
+    </div>
+
+    <div class="card" style="padding:14px 16px;margin-bottom:16px">
+      <div class="opt-row" style="margin:0;align-items:flex-start">
+        <label for="tinypngKey" style="min-width:auto;white-space:nowrap">TinyPNG API Key（可选）</label>
+        <input type="text" id="tinypngKey" placeholder="全局：批量压体积、谷歌 512×512 超 1MB 时均可优先调用 TinyPNG" style="flex:1;min-width:0;max-width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
+        <a href="https://tinypng.com/developers" target="_blank" rel="noopener" style="font-size:12px;color:var(--primary);white-space:nowrap">免费获取</a>
+      </div>
+      <p class="hint" style="margin:8px 0 0 0;font-size:12px;color:var(--text-secondary);line-height:1.5">填写后两个标签页共用；未填则超限场景仅用浏览器本地压缩。</p>
     </div>
 
     <!-- 批量改尺寸 -->
@@ -142,7 +150,7 @@
       <div class="card">
         <div id="uploadZone" class="upload-zone">
           <input type="file" id="fileInput" accept="image/*" multiple>
-          <div class="hint">点击或拖拽多张图片到此处（可多选）</div>
+          <div class="hint">点击或拖拽多张图片到此处（可多选）；每张导出格式与对应原图一致（如 PNG→PNG、JPG→JPG）</div>
         </div>
         <div id="selectedPreviewSection" class="preview-section hidden">
           <h3>已选图片预览（共 <span id="selectedCount">0</span> 张）</h3>
@@ -166,15 +174,20 @@
             <label>缩放比例 <input type="number" id="inputScale" min="0.01" max="10" step="0.1" value="1" placeholder="如 0.5、1、2"></label>
             <span class="hint" style="font-size:12px;color:var(--text-secondary)">按比例缩放宽高，如 0.5 为一半</span>
           </div>
+          <div class="opt-row">
+            <label for="inputBatchMaxKb" style="min-width:120px">单张最大体积（KB）</label>
+            <input type="number" id="inputBatchMaxKb" min="1" max="51200" step="1" placeholder="留空默认 600" style="width:168px;min-width:140px;padding:6px 10px;border:1px solid var(--border);border-radius:6px">
+            <span class="hint" style="font-size:12px;color:var(--text-secondary)">生成后若超过该大小：先尝试上方 TinyPNG（若已填 Key），否则与谷歌 512 相同，画布逐级压 JPEG 直至达标</span>
+          </div>
         </div>
         <div class="actions">
           <button type="button" class="btn btn-primary" id="btnGenerate" disabled>生成预览</button>
-          <button type="button" class="btn btn-secondary" id="btnDownload" disabled>下载 ZIP</button>
+          <button type="button" class="btn btn-secondary" id="btnDownload" disabled>保存到文件夹</button>
         </div>
         <div class="status" id="status"></div>
       </div>
       <div id="previewSection" class="card preview-section hidden">
-        <h3>生成结果预览（确认无误后点击「下载 ZIP」）</h3>
+        <h3>生成结果预览（确认无误后点击「保存到文件夹」）</h3>
         <div class="preview-grid" id="previewGrid"></div>
       </div>
     </div>
@@ -201,20 +214,15 @@
           <label><input type="checkbox" id="chkGoogle"> 谷歌</label>
           <label><input type="checkbox" id="chkMinigame"> 小游戏</label>
         </div>
-        <div class="opt-row" style="margin-top:12px">
-          <label for="tinypngKey" style="min-width:auto">TinyPNG API Key（可选）</label>
-          <input type="text" id="tinypngKey" placeholder="谷歌 512×512 超过 1MB 时优先用 TinyPNG 压缩" style="flex:1; max-width:280px; padding:6px 8px; border:1px solid var(--border); border-radius:6px; font-size:13px">
-          <a href="https://tinypng.com/developers" target="_blank" rel="noopener" style="font-size:12px; color:var(--primary)">免费获取</a>
-        </div>
         <div class="actions">
           <button type="button" class="btn btn-primary" id="iconBtnGenerate" disabled>生成预览</button>
-          <button type="button" class="btn btn-secondary" id="iconBtnDownload" disabled>下载 ZIP</button>
+          <button type="button" class="btn btn-secondary" id="iconBtnDownload" disabled>保存到文件夹</button>
           <button type="button" class="btn btn-secondary" id="iconBtnReset">重新选择</button>
         </div>
         <div class="status" id="iconStatus"></div>
       </div>
       <div id="iconPreviewSection" class="card preview-section hidden">
-        <h3>Icon 生成结果预览（确认无误后点击「下载 ZIP」）</h3>
+        <h3>Icon 生成结果预览（确认无误后点击「保存到文件夹」）</h3>
         <div class="preview-grid" id="iconPreviewGrid"></div>
       </div>
     </div>
@@ -249,9 +257,154 @@
   var selectedCountEl = document.getElementById('selectedCount');
   var previewSection = document.getElementById('previewSection');
   var previewGrid = document.getElementById('previewGrid');
+  var inputBatchMaxKb = document.getElementById('inputBatchMaxKb');
 
   var selectedFiles = [];
   var generatedBlobs = [];
+
+  function sanitizePackFolderName(name) {
+    var s = String(name || '').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+/, '').trim();
+    if (!s) s = '导出图片';
+    if (s.length > 200) s = s.slice(0, 200);
+    return s;
+  }
+
+  function askPackFolderName(defaultName) {
+    var def = defaultName || '导出图片';
+    var input = window.prompt('请输入要创建的子文件夹名称（将建在所选目录下）', def);
+    if (input === null) return null;
+    return sanitizePackFolderName(input.trim() || def);
+  }
+
+  /**
+   * 直接写入磁盘文件夹（无压缩包）。必须先 await showDirectoryPicker，再 prompt，以免丢失用户手势。
+   * @param {{ path: string, blob: Blob }[]} entries
+   * @param {string} defaultPromptName
+   */
+  async function saveEntriesToPackFolder(entries, defaultPromptName) {
+    if (!window.showDirectoryPicker) return 'unsupported';
+    var dirHandle;
+    try {
+      dirHandle = await window.showDirectoryPicker();
+    } catch (e) {
+      if (e.name === 'AbortError') return 'abort';
+      throw e;
+    }
+    var packInput = askPackFolderName(defaultPromptName || '导出图片');
+    if (packInput === null) return 'abort';
+    var safePack = sanitizePackFolderName(packInput);
+    var root = await dirHandle.getDirectoryHandle(safePack, { create: true });
+    for (var i = 0; i < entries.length; i++) {
+      var rel = String(entries[i].path || 'file').replace(/\\/g, '/');
+      var segs = rel.split('/').filter(function (s) { return s.length; });
+      var fileName = segs.pop();
+      if (!fileName) continue;
+      var cur = root;
+      for (var j = 0; j < segs.length; j++) {
+        cur = await cur.getDirectoryHandle(segs[j], { create: true });
+      }
+      var fh = await cur.getFileHandle(fileName, { create: true });
+      var w = await fh.createWritable();
+      await w.write(entries[i].blob);
+      await w.close();
+    }
+    var parentName = typeof dirHandle.name === 'string' ? dirHandle.name : '';
+    var displayPath = parentName ? parentName + '/' + safePack : safePack;
+    return { ok: true, packName: safePack, parentName: parentName, displayPath: displayPath };
+  }
+
+  function getBatchOutputFormat(file) {
+    var type = (file && file.type) || '';
+    var name = (file && file.name) || '';
+    var extMatch = name.match(/\.([^.]+)$/i);
+    var ext = extMatch ? extMatch[1].toLowerCase() : '';
+    if (type === 'image/jpeg' || ext === 'jpg' || ext === 'jpeg') {
+      return { mime: 'image/jpeg', ext: 'jpg', quality: 0.92 };
+    }
+    if (type === 'image/webp' || ext === 'webp') {
+      return { mime: 'image/webp', ext: 'webp', quality: 0.92 };
+    }
+    if (type === 'image/png' || ext === 'png') {
+      return { mime: 'image/png', ext: 'png' };
+    }
+    if (type === 'image/bmp' || ext === 'bmp') {
+      return { mime: 'image/png', ext: 'png' };
+    }
+    if (type.indexOf('image/') === 0) {
+      var sub = type.split('/')[1];
+      if (sub === 'jpeg') return { mime: 'image/jpeg', ext: 'jpg', quality: 0.92 };
+      if (sub === 'png') return { mime: 'image/png', ext: 'png' };
+      if (sub === 'webp') return { mime: 'image/webp', ext: 'webp', quality: 0.92 };
+    }
+    if (ext === 'jpg' || ext === 'jpeg') return { mime: 'image/jpeg', ext: 'jpg', quality: 0.92 };
+    if (ext === 'png') return { mime: 'image/png', ext: 'png' };
+    if (ext === 'webp') return { mime: 'image/webp', ext: 'webp', quality: 0.92 };
+    return { mime: 'image/png', ext: 'png' };
+  }
+
+  function canvasToBlobWithFormat(canvas, fmt) {
+    return new Promise(function (resolve) {
+      var q = fmt.quality != null ? fmt.quality : 0.92;
+      if (fmt.mime === 'image/jpeg' || fmt.mime === 'image/webp') {
+        canvas.toBlob(function (blob) { resolve(blob); }, fmt.mime, q);
+      } else {
+        canvas.toBlob(function (blob) { resolve(blob); }, fmt.mime || 'image/png');
+      }
+    });
+  }
+
+  /** 与一键改 Icon 中谷歌 512 超限相同的本地压缩：先试 PNG，再逐级降低 JPEG 质量 */
+  function compressCanvasUnderMaxBytes(canvas, maxBytes) {
+    maxBytes = maxBytes || 1024000;
+    return new Promise(function (resolve) {
+      function tryQuality(q) {
+        if (q < 0.1) {
+          canvas.toBlob(function (blob) { resolve(blob); }, 'image/png');
+          return;
+        }
+        canvas.toBlob(function (blob) {
+          if (blob && blob.size <= maxBytes) {
+            resolve(blob);
+          } else {
+            tryQuality(Math.max(0.1, q - 0.1));
+          }
+        }, 'image/jpeg', q);
+      }
+      canvas.toBlob(function (blob) {
+        if (blob && blob.size <= maxBytes) {
+          resolve(blob);
+        } else {
+          tryQuality(0.9);
+        }
+      }, 'image/png');
+    });
+  }
+
+  function compressWithTinyPNG(blob, apiKey) {
+    var auth = 'Basic ' + btoa('api:' + apiKey);
+    return fetch('https://api.tinify.com/shrink', {
+      method: 'POST',
+      headers: { 'Authorization': auth, 'Content-Type': 'application/octet-stream' },
+      body: blob
+    }).then(function (res) {
+      if (!res.ok) throw new Error('TinyPNG: ' + (res.status === 401 ? 'API Key 无效' : res.status === 429 ? '本月次数已用完' : '请求失败 ' + res.status));
+      return res.json();
+    }).then(function (data) {
+      if (!data.output || !data.output.url) throw new Error('TinyPNG 返回异常');
+      return fetch(data.output.url, { headers: { 'Authorization': auth } });
+    }).then(function (res) {
+      if (!res.ok) throw new Error('TinyPNG 获取结果失败');
+      return res.blob();
+    });
+  }
+
+  function extFromBlobType(blob, fallbackExt) {
+    var t = (blob && blob.type) || '';
+    if (t === 'image/jpeg') return 'jpg';
+    if (t === 'image/png') return 'png';
+    if (t === 'image/webp') return 'webp';
+    return fallbackExt || 'png';
+  }
 
   document.querySelectorAll('input[name="batchMethod"]').forEach(function (radio) {
     radio.addEventListener('change', function () {
@@ -318,12 +471,6 @@
     return c;
   }
 
-  function canvasToBlob(canvas) {
-    return new Promise(function (resolve) {
-      canvas.toBlob(function (blob) { resolve(blob); }, 'image/png');
-    });
-  }
-
   function processOne(file, method, w, h, scale) {
     return new Promise(function (resolve, reject) {
       var url = URL.createObjectURL(file);
@@ -341,9 +488,29 @@
               targetH = Math.max(1, Math.round(img.height * scale));
             }
             canvas = resizeImg(img, targetW, targetH);
-            var blob = await canvasToBlob(canvas);
+            var fmt = getBatchOutputFormat(file);
+            var blob = await canvasToBlobWithFormat(canvas, fmt);
+            var rawKb = (inputBatchMaxKb && String(inputBatchMaxKb.value).trim());
+            var maxKb = rawKb === '' || rawKb == null ? 600 : parseFloat(rawKb);
+            if (!isFinite(maxKb) || maxKb <= 0) maxKb = 600;
+            var maxBytes = Math.round(maxKb * 1024);
+            var tinypngKeyEl = document.getElementById('tinypngKey');
+            var apiKey = tinypngKeyEl ? String(tinypngKeyEl.value || '').trim() : '';
+            if (blob.size > maxBytes) {
+              if (apiKey) {
+                try {
+                  blob = await compressWithTinyPNG(blob, apiKey);
+                } catch (e) {
+                  if (typeof console !== 'undefined' && console.warn) console.warn('TinyPNG 压缩失败，改用本地压缩：', e.message);
+                }
+              }
+              if (blob.size > maxBytes) {
+                blob = await compressCanvasUnderMaxBytes(canvas, maxBytes);
+              }
+            }
+            var outExt = extFromBlobType(blob, fmt.ext);
             var baseName = (file.name || 'image').replace(/\.[^.]+$/, '');
-            var name = baseName + '_' + targetW + 'x' + targetH + '.png';
+            var name = baseName + '_' + targetW + 'x' + targetH + '.' + outExt;
             URL.revokeObjectURL(url);
             resolve({ name: name, blob: blob, dataUrl: URL.createObjectURL(blob) });
           } catch (e) {
@@ -388,7 +555,7 @@
         div.appendChild(nameEl);
         previewGrid.appendChild(div);
       });
-      statusEl.textContent = '已生成 ' + generatedBlobs.length + ' 张，请预览后点击「下载 ZIP」';
+      statusEl.textContent = '已生成 ' + generatedBlobs.length + ' 张，请预览后点击「保存到文件夹」';
       btnDownload.disabled = false;
     } catch (err) {
       statusEl.textContent = '错误: ' + err.message;
@@ -399,19 +566,19 @@
   btnDownload.addEventListener('click', async function () {
     if (!generatedBlobs.length) return;
     btnDownload.disabled = true;
-    statusEl.textContent = '正在打包 ZIP...';
+    statusEl.textContent = '请在系统对话框中选择父文件夹…';
     try {
-      var zip = new JSZip();
-      generatedBlobs.forEach(function (item) {
-        zip.file(item.name, item.blob);
+      var entries = generatedBlobs.map(function (item) {
+        return { path: item.name, blob: item.blob };
       });
-      var blob = await zip.generateAsync({ type: 'blob' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'batch_images.zip';
-      a.click();
-      URL.revokeObjectURL(a.href);
-      statusEl.textContent = '已下载 batch_images.zip';
+      var folderResult = await saveEntriesToPackFolder(entries, '导出图片');
+      if (folderResult && folderResult.ok) {
+        statusEl.textContent = '已写入「' + folderResult.displayPath + '」';
+      } else if (folderResult === 'abort') {
+        statusEl.textContent = '已取消';
+      } else {
+        statusEl.textContent = '当前环境无法保存为文件夹，请使用 Chrome 或 Edge，并通过 HTTPS 或 localhost 打开本页。';
+      }
     } catch (err) {
       statusEl.textContent = '错误: ' + err.message;
     }
@@ -602,50 +769,6 @@
     })();
   }
 
-  function compressWithTinyPNG(blob, apiKey) {
-    var auth = 'Basic ' + btoa('api:' + apiKey);
-    return fetch('https://api.tinify.com/shrink', {
-      method: 'POST',
-      headers: { 'Authorization': auth, 'Content-Type': 'application/octet-stream' },
-      body: blob
-    }).then(function (res) {
-      if (!res.ok) throw new Error('TinyPNG: ' + (res.status === 401 ? 'API Key 无效' : res.status === 429 ? '本月次数已用完' : '请求失败 ' + res.status));
-      return res.json();
-    }).then(function (data) {
-      if (!data.output || !data.output.url) throw new Error('TinyPNG 返回异常');
-      return fetch(data.output.url, { headers: { 'Authorization': auth } });
-    }).then(function (res) {
-      if (!res.ok) throw new Error('TinyPNG 获取结果失败');
-      return res.blob();
-    });
-  }
-
-  function compressUnder1MB(canvas, maxBytes) {
-    maxBytes = maxBytes || 1024000;
-    return new Promise(function (resolve) {
-      function tryQuality(q) {
-        if (q < 0.1) {
-          iconCanvasToBlob(canvas, 'image/png').then(resolve);
-          return;
-        }
-        canvas.toBlob(function (blob) {
-          if (blob && blob.size <= maxBytes) {
-            resolve(blob);
-          } else {
-            tryQuality(Math.max(0.1, q - 0.1));
-          }
-        }, 'image/jpeg', q);
-      }
-      canvas.toBlob(function (blob) {
-        if (blob && blob.size <= maxBytes) {
-          resolve(blob);
-        } else {
-          tryQuality(0.9);
-        }
-      }, 'image/png');
-    });
-  }
-
   function runGoogle(img, folder) {
     var bg = getDominantEdgeColor(img);
     var list = [];
@@ -666,7 +789,7 @@
         }
         if (blob512) {
           if (blob512.size > 1024000) {
-            blob512 = await compressUnder1MB(c512, 1024000);
+            blob512 = await compressCanvasUnderMaxBytes(c512, 1024000);
             list.push({ path: folder + '/512_512.jpg', name: '512_512.jpg', blob: blob512, folder: folder });
           } else {
             list.push({ path: folder + '/512_512.png', name: '512_512.png', blob: blob512, folder: folder });
@@ -743,7 +866,7 @@
         iconPreviewGrid.appendChild(div);
       });
       iconPreviewSection.classList.remove('hidden');
-      iconStatus.textContent = '已生成 ' + iconGeneratedList.length + ' 个文件，请预览后点击「下载 ZIP」';
+      iconStatus.textContent = '已生成 ' + iconGeneratedList.length + ' 个文件，请预览后点击「保存到文件夹」';
       iconBtnDownload.disabled = false;
     } catch (err) {
       iconStatus.textContent = '错误: ' + err.message;
@@ -756,19 +879,19 @@
   iconBtnDownload.addEventListener('click', async function () {
     if (!iconGeneratedList.length) return;
     iconBtnDownload.disabled = true;
-    iconStatus.textContent = '正在打包 ZIP...';
+    iconStatus.textContent = '请在系统对话框中选择父文件夹…';
     try {
-      var zip = new JSZip();
-      iconGeneratedList.forEach(function (item) {
-        zip.file(item.path, item.blob);
+      var entries = iconGeneratedList.map(function (item) {
+        return { path: item.path, blob: item.blob };
       });
-      var blob = await zip.generateAsync({ type: 'blob' });
-      var a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = 'icon_export.zip';
-      a.click();
-      URL.revokeObjectURL(a.href);
-      iconStatus.textContent = '已下载 icon_export.zip';
+      var folderResult = await saveEntriesToPackFolder(entries, 'icon导出');
+      if (folderResult && folderResult.ok) {
+        iconStatus.textContent = '已写入「' + folderResult.displayPath + '」';
+      } else if (folderResult === 'abort') {
+        iconStatus.textContent = '已取消';
+      } else {
+        iconStatus.textContent = '当前环境无法保存为文件夹，请使用 Chrome 或 Edge，并通过 HTTPS 或 localhost 打开本页。';
+      }
     } catch (err) {
       iconStatus.textContent = '错误: ' + err.message;
     }
